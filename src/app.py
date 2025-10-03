@@ -8,11 +8,11 @@ import re
 import sys
 import os
 
-# Add paths for imports
-sys.path.append(os.path.join(os.path.dirname(__file__), 'core'))
-sys.path.append(os.path.join(os.path.dirname(__file__), 'modules'))
+# Add paths for imports (ensure local modules take precedence over any installed packages)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'core'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'modules'))
 
-from scoring_engine import LeadScorer
+from lead_scoring_engine import LeadScorer
 from outreach_templates import get_templates, get_openers, generate_personalized_content
 from enrichment import enrich_leads
 from column_mapper import ColumnMapper

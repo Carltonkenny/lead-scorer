@@ -1,7 +1,7 @@
 # Complete Application Integration Test
 import pandas as pd
 import io
-from scoring_engine import LeadScorer
+from lead_scoring_engine import LeadScorer
 from outreach_templates import generate_personalized_content
 
 def test_complete_workflow():

@@ -1,6 +1,6 @@
 # Test App Components
 import pandas as pd
-from scoring_engine import LeadScorer
+from lead_scoring_engine import LeadScorer
 
 def test_sample_data_creation():
     """Test sample CSV creation and styling."""

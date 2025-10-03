@@ -1,6 +1,6 @@
 # Test Script for Lead Scoring Engine
 import pandas as pd
-from scoring_engine import LeadScorer
+from lead_scoring_engine import LeadScorer
 
 def test_scoring_engine():
     """Test the lead scoring engine with sample data."""

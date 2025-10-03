@@ -1,6 +1,6 @@
 # Test Enhanced Robustness and Normalization
 import pandas as pd
-from scoring_engine import LeadScorer
+from lead_scoring_engine import LeadScorer
 
 def test_job_title_normalization():
     """Test job title normalization with various edge cases."""
