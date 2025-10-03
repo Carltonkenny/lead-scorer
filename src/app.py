@@ -5,8 +5,16 @@ import streamlit as st
 import pandas as pd
 import io
 import re
+import sys
+import os
+
+# Add paths for imports
+sys.path.append(os.path.join(os.path.dirname(__file__), 'core'))
+sys.path.append(os.path.join(os.path.dirname(__file__), 'modules'))
+
 from scoring_engine import LeadScorer
 from outreach_templates import get_templates, get_openers, generate_personalized_content
+from column_mapper import ColumnMapper
 
 def validate_email_format(email):
     """Validate basic email format."""
@@ -88,15 +96,114 @@ def apply_score_styling(score):
     return ''
 
 def create_sample_csv():
-    """Create a sample CSV for users to download and test."""
-    sample_data = {
-        'name': ['John Smith', 'Sarah Johnson', 'Mike Chen', 'Lisa Brown'],
-        'email': ['john.smith@techcorp.com', 'sarah.j@gmail.com', 'mike.chen@startup.io', 'lisa@enterprise.com'],
-        'company': ['TechCorp Inc', 'Freelance', 'StartupIO', 'Enterprise Solutions'],
-        'job_title': ['Sales Manager', 'Marketing Consultant', 'Product Manager', 'CEO'],
-        'company_size': [120, 1, 25, 500]
-    }
-    return pd.DataFrame(sample_data)
+    """Load the complex test dataset for users to download and test."""
+    try:
+        # Load the complex test dataset from data folder
+        complex_csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'complex_test_leads.csv')
+        if os.path.exists(complex_csv_path):
+            return pd.read_csv(complex_csv_path)
+        else:
+            # Fallback to simple sample if complex dataset not found
+            sample_data = {
+                'name': ['John Smith', 'Sarah Johnson', 'Mike Chen', 'Lisa Brown'],
+                'email': ['john.smith@techcorp.com', 'sarah.j@gmail.com', 'mike.chen@startup.io', 'lisa@enterprise.com'],
+                'company': ['TechCorp Inc', 'Freelance', 'StartupIO', 'Enterprise Solutions'],
+                'job_title': ['Sales Manager', 'Marketing Consultant', 'Product Manager', 'CEO'],
+                'company_size': [120, 1, 25, 500]
+            }
+            return pd.DataFrame(sample_data)
+    except Exception as e:
+        # Fallback to simple sample if any error occurs
+        st.error(f"Note: Using simple sample data (complex dataset unavailable: {str(e)})")
+        sample_data = {
+            'name': ['John Smith', 'Sarah Johnson', 'Mike Chen', 'Lisa Brown'],
+            'email': ['john.smith@techcorp.com', 'sarah.j@gmail.com', 'mike.chen@startup.io', 'lisa@enterprise.com'],
+            'company': ['TechCorp Inc', 'Freelance', 'StartupIO', 'Enterprise Solutions'],
+            'job_title': ['Sales Manager', 'Marketing Consultant', 'Product Manager', 'CEO'],
+            'company_size': [120, 1, 25, 500]
+        }
+        return pd.DataFrame(sample_data)
+
+def show_manual_column_mapping_interface(df, missing_columns, mapper):
+    """
+    Display manual column mapping interface when auto-mapping fails.
+    
+    Args:
+        df (pd.DataFrame): Original DataFrame with unmapped columns
+        missing_columns (List[str]): Columns that need manual mapping
+        mapper (ColumnMapper): Column mapper instance
+        
+    Returns:
+        dict: Manual mapping selections {standard_name: original_column}
+    """
+    st.markdown("---")
+    st.subheader("🔧 Manual Column Mapping Required")
+    st.info("Some columns couldn't be automatically mapped. Please help us identify them below:")
+    
+    # Get suggestions for missing columns
+    suggestions = mapper.suggest_manual_mappings(df, missing_columns)
+    
+    # Create manual mapping interface
+    manual_mapping = {}
+    available_columns = ['None'] + list(df.columns)
+    
+    # Create columns for better layout
+    col1, col2 = st.columns(2)
+    
+    for i, required_col in enumerate(missing_columns):
+        # Alternate columns for better layout
+        with col1 if i % 2 == 0 else col2:
+            st.markdown(f"**Map '{required_col}' to:**")
+            
+            # Show column info to help user decide
+            with st.expander(f"📊 Available columns preview", expanded=False):
+                for col in df.columns:
+                    content_type = mapper.detect_column_content_type(df, col)
+                    sample_values = df[col].dropna().head(3).tolist()
+                    sample_str = ', '.join([str(val)[:30] for val in sample_values])
+                    
+                    # Highlight suggested columns
+                    if col in suggestions.get(required_col, []):
+                        st.success(f"**{col}** (type: {content_type}) - *Suggested*")
+                        st.success(f"Sample: {sample_str}")
+                    else:
+                        st.write(f"**{col}** (type: {content_type})")
+                        st.write(f"Sample: {sample_str}")
+            
+            # Create selectbox with suggestions at the top
+            suggested_options = suggestions.get(required_col, [])
+            if suggested_options:
+                ordered_options = ['None'] + suggested_options + [col for col in df.columns if col not in suggested_options]
+            else:
+                ordered_options = available_columns
+            
+            selected = st.selectbox(
+                f"Select column for '{required_col}':",
+                ordered_options,
+                key=f"manual_map_{required_col}",
+                help=f"Choose which column contains {required_col} data"
+            )
+            
+            manual_mapping[required_col] = selected if selected != 'None' else None
+            
+            st.markdown("---")
+    
+    return manual_mapping
+
+def show_column_mapping_results(mapping_log):
+    """
+    Display column mapping results in a user-friendly way.
+    
+    Args:
+        mapping_log (List[str]): List of mapping descriptions
+    """
+    if mapping_log:
+        st.success("🔄 **Column Mapping Applied:**")
+        for mapping in mapping_log:
+            st.success(f"✅ {mapping}")
+        st.info("💡 **Your CSV columns have been automatically standardized for processing!**")
+    else:
+        st.info("✅ **Perfect!** Your CSV columns are already in the standard format.")
 
 def main():
     st.title("🎯 Lead Prioritization Tool")
@@ -110,12 +217,14 @@ def main():
     # Sidebar with instructions and tips
     st.sidebar.header("📋 Instructions")
     st.sidebar.markdown("""
-    **Expected CSV Columns:**
-    - `name`: Lead's full name
-    - `email`: Email address
-    - `company`: Company name
-    - `job_title`: Job title/position
-    - `company_size`: Number of employees
+    **Required Data Fields:**
+    - **Name**: Lead's full name
+    - **Email**: Email address  
+    - **Company**: Company name
+    - **Job Title**: Job title/position
+    - **Company Size**: Number of employees
+    
+    🔄 **Flexible Column Names**: Your CSV columns will be automatically mapped! Use any reasonable column names like 'Title' instead of 'job_title'.
     
     **Scoring Rules:**
     - 🟢 **High**: Senior titles + corporate email + large company
@@ -129,11 +238,13 @@ def main():
     
     tips = [
         "🎯 **Sort by High priority first** for maximum efficiency",
-        "📋 **Use the sample CSV** to understand the format",
+        "📋 **Use the 40-lead sample CSV** to test all features",
         "⚙️ **Abbreviations work**: 'Sr. VP', 'Mgr', 'Dir' are recognized", 
         "🏢 **Company sizes can be text**: 'Startup', 'Medium', '50+' all work",
         "📧 **Corporate emails score higher** than Gmail/Yahoo",
-        "📤 **Export high-priority leads** for focused outreach"
+        "📤 **Export high-priority leads** for focused outreach",
+        "🌐 **International names supported**: Special characters handled",
+        "🏢 **Multiple industries**: Sample includes 10 different business sectors"
     ]
     
     # Show tips with some personality
@@ -148,7 +259,8 @@ def main():
         label="📥 Download Sample CSV",
         data=csv_buffer.getvalue(),
         file_name="sample_leads.csv",
-        mime="text/csv"
+        mime="text/csv",
+        help="Download a realistic 40-lead dataset with complex formatting and multiple industries for testing"
     )
     
     # Main content area
@@ -170,8 +282,48 @@ def main():
                 with st.spinner('📋 Loading and validating your CSV...'):
                     df = pd.read_csv(uploaded_file)
                     
-                    # Comprehensive validation
-                    issues, warnings, is_valid = validate_csv_data(df)
+                    # Initialize column mapper
+                    mapper = ColumnMapper()
+                    
+                    # Step 1: Auto-map columns
+                    mapped_df, mapping_log, column_mapping = mapper.auto_map_columns(df)
+                    
+                    # Step 2: Check for missing columns after auto-mapping
+                    missing_columns, available_columns = mapper.validate_required_columns(mapped_df)
+                    
+                    # Step 3: Show mapping results
+                    if mapping_log:
+                        show_column_mapping_results(mapping_log)
+                    
+                    # Step 4: Handle missing columns with manual mapping
+                    if missing_columns:
+                        st.warning(f"⚠️ **Missing columns after auto-mapping:** {', '.join(missing_columns)}")
+                        
+                        # Show manual mapping interface
+                        manual_mapping = show_manual_column_mapping_interface(df, missing_columns, mapper)
+                        
+                        # Apply manual mapping button
+                        if st.button("🔄 Apply Manual Mapping", type="primary"):
+                            manual_mapped_df, manual_mapping_log = mapper.apply_manual_mapping(mapped_df, manual_mapping)
+                            
+                            # Validate again after manual mapping
+                            final_missing, _ = mapper.validate_required_columns(manual_mapped_df)
+                            
+                            if final_missing:
+                                st.error(f"😱 **Still missing required columns:** {', '.join(final_missing)}")
+                                st.error("📝 **Please map all required columns to proceed.**")
+                                st.stop()
+                            else:
+                                mapped_df = manual_mapped_df
+                                if manual_mapping_log:
+                                    show_column_mapping_results(manual_mapping_log)
+                                st.success("✅ **All columns mapped successfully!**")
+                        else:
+                            st.info("👆 **Click 'Apply Manual Mapping' above to proceed with lead scoring.**")
+                            st.stop()
+                    
+                    # Step 5: Enhanced validation on mapped data
+                    issues, warnings, is_valid = validate_csv_data(mapped_df)
                     
                     # Display validation results
                     if issues:
@@ -187,8 +339,8 @@ def main():
                             st.warning(warning)
                         st.info("🚀 **Don't worry - we'll handle these automatically and proceed with scoring!**")
                     
-                    # Clean the data
-                    df_clean = df.dropna(how='all')  # Remove completely empty rows
+                    # Step 6: Clean the data
+                    df_clean = mapped_df.dropna(how='all')  # Remove completely empty rows
                     df_clean['name'] = df_clean['name'].fillna('Unknown')
                     df_clean['company'] = df_clean['company'].fillna('Unknown Company')
                     df_clean['job_title'] = df_clean['job_title'].fillna('Unknown')
@@ -423,7 +575,7 @@ def main():
         # Show sample data when no file is uploaded
         st.markdown("---")
         st.subheader("📋 Sample Lead Data (Demo)")
-        st.info("Upload your CSV file above to see prioritized leads, or download the sample CSV to get started.")
+        st.info("Upload your CSV file above to see prioritized leads, or download our realistic 40-lead sample CSV to test all features.")
         
         # Process and display sample data
         sample_scored = st.session_state.scorer.score_leads_batch(sample_df)

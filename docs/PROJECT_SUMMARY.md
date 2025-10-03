@@ -47,7 +47,12 @@ pip install pandas streamlit
 ### Launch Application
 ```bash
 cd "C:\Users\user\OneDrive\Desktop\Lead scorer"
-streamlit run app.py
+
+# Recommended launcher
+python run_app.py
+
+# Or run Streamlit directly
+streamlit run src/app.py
 ```
 
 ### Access Application
@@ -279,8 +284,10 @@ score = scorer.score_lead(lead, mode="ml")
 # Navigate to project directory
 cd "C:\Users\user\OneDrive\Desktop\Lead scorer"
 
-# Launch application  
-streamlit run app.py
+# Launch application (choose one)
+python run_app.py
+# or
+streamlit run src/app.py
 
 # Access at: http://localhost:8501
 ```
