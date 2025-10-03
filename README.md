@@ -1,5 +1,8 @@
 # 🎯 Lead Prioritization Tool
 
+Live Demo: https://lead-scorer.streamlit.app/
+Video Walkthrough (Loom): <add-link-here after recording>
+
 ## Quick Start
 
 ### Run the Application
@@ -53,6 +56,11 @@ Lead scorer/
 ---
 
 ## Features
+
+### New (Oct 2025)
+- Explainable scoring with compact Why tags (Title | Email | Size)
+- Optional enrichment: email domain, corporate/personal, website guess, industry
+- Optional deduplication by email
 
 ### ✅ **Advanced Outreach Personalization**
 - **Industry Detection**: Automatically classifies companies into 10+ business sectors

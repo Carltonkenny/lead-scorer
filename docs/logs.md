@@ -1011,3 +1011,27 @@ streamlit run app.py
 ---
 
 *Phase 6 successfully completed - Project now exhibits human-engineered quality with production-ready robustness*
+
+---
+
+## 🔧 UPDATE: Enrichment, Deduplication, and Explainability (2025-10-03T14:18Z)
+
+### Summary
+- Added optional enrichment (no new dependencies): email_domain, is_corporate_email, website_guess, industry
+- Added duplicate detection: duplicate_email and duplicate_name_company; sidebar toggle to deduplicate by email
+- Added explainable scoring: score_points and score_reasons (internal), compact Why tags (Title | Email | Size) in the table
+- UI toggles under "⚙️ Optional Enhancements"; default behavior remains backward-compatible
+
+### Files Changed
+- `src/modules/enrichment.py` (new): lightweight enrichment utilities
+- `src/core/scoring_engine.py`: new methods `score_lead_with_explain` and `score_leads_batch_with_explain`
+- `src/app.py`: sidebar toggles; optional enrichment/dedup; compact Why column
+
+### Rationale
+- Closes gap with "leadgen tool" brief by adding sourcing-like context (domain → industry) and deduplication
+- Improves trust and usability via explainability without cluttering the UI
+- Keeps performance fast and deployment simple (no API calls)
+
+### Next
+- Record 60–90s Loom walkthrough and add link to README and PROJECT_SUMMARY
+- Optionally pin Python/runtime for reproducible cloud builds

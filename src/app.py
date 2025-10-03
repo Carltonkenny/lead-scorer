@@ -14,6 +14,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'modules'))
 
 from scoring_engine import LeadScorer
 from outreach_templates import get_templates, get_openers, generate_personalized_content
+from enrichment import enrich_leads
 from column_mapper import ColumnMapper
 
 def validate_email_format(email):
@@ -262,6 +263,13 @@ def main():
         mime="text/csv",
         help="Download a realistic 40-lead dataset with complex formatting and multiple industries for testing"
     )
+
+    # Optional enhancements
+    st.sidebar.markdown("---")
+    st.sidebar.header("⚙️ Optional Enhancements")
+    enhance_enrichment = st.sidebar.checkbox("Enrich data (domain, industry)", value=True)
+    dedup_by_email = st.sidebar.checkbox("Deduplicate by email", value=False)
+    explain_scores = st.sidebar.checkbox("Explain scores (why?)", value=True)
     
     # Main content area
     col1, col2 = st.columns([2, 1])
@@ -355,10 +363,23 @@ def main():
                             return 0
                     
                     df_clean['company_size'] = df_clean['company_size'].apply(clean_company_size)
+
+                    # Optional enrichment & deduplication (non-destructive to original)
+                    df_to_score = df_clean.copy()
+                    if enhance_enrichment:
+                        df_to_score, enrich_report = enrich_leads(df_to_score)
+                        st.info(f"🔎 Enriched data: {enrich_report['rows']} rows | Duplicate emails flagged: {enrich_report['duplicate_email_count']}")
+                    if dedup_by_email:
+                        before = len(df_to_score)
+                        df_to_score = df_to_score.drop_duplicates(subset=['email'], keep='first')
+                        st.info(f"🧹 Deduplicated by email: removed {before - len(df_to_score)} duplicates")
                 
                 with st.spinner('🎯 Scoring your leads...'):
                     # Apply scoring
-                    scored_df = st.session_state.scorer.score_leads_batch(df_clean)
+                    if explain_scores:
+                        scored_df = st.session_state.scorer.score_leads_batch_with_explain(df_to_score)
+                    else:
+                        scored_df = st.session_state.scorer.score_leads_batch(df_to_score)
                     
                 st.success(f"✅ **Upload Complete!** Successfully processed {len(scored_df)} leads.")
                 
@@ -407,6 +428,27 @@ def main():
             display_df = scored_df[scored_df['score'] == score_filter].copy()
         else:
             display_df = scored_df.copy()
+
+        # Add compact "Why" summary if explanations are available
+        if explain_scores and 'score_reasons' in display_df.columns:
+            def _short_why(text):
+                try:
+                    s = str(text)
+                except Exception:
+                    return ''
+                tags = []
+                if 'senior title' in s or 'executive title' in s:
+                    tags.append('Title')
+                if 'corporate email' in s:
+                    tags.append('Email')
+                if 'company size' in s:
+                    tags.append('Size')
+                return ' | '.join(tags)
+            display_df['Why'] = display_df['score_reasons'].apply(_short_why)
+            # Hide verbose explanation columns in the table
+            for col in ['score_reasons', 'score_points']:
+                if col in display_df.columns:
+                    display_df.drop(columns=[col], inplace=True)
         
         if len(display_df) == 0:
             st.info(f"No leads found with {score_filter} priority.")

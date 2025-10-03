@@ -1,4 +1,8 @@
 # 🎯 Lead Prioritization Tool - Project Summary
+
+Quick Links
+- Live Demo: https://lead-scorer.streamlit.app/
+- Video Walkthrough (Loom): <add-link-here after recording>
 ## Caprae Capital AI-Readiness Challenge - COMPLETED ✅
 
 ---
@@ -38,6 +42,12 @@ Lead scorer/
 ---
 
 ## 🚀 QUICK START - DEPLOY NOW
+
+### What’s New (Oct 2025)
+- Explainable scoring with compact Why tags per row
+- Optional enrichment (domain, industry, website guess) — no external APIs
+- Duplicate detection and "Deduplicate by email" toggle
+- No breaking changes; toggles live in the sidebar
 
 ### Prerequisites
 ```bash

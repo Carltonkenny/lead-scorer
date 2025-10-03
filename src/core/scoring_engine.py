@@ -169,6 +169,92 @@ class LeadScorer:
             return "Medium"
         else:
             return "Medium"
+
+    def score_lead_with_explain(self, lead: dict):
+        """
+        Score a single lead and return explanation details.
+        Returns: (level, points, reasons_list)
+        """
+        points = 0
+        reasons = []
+
+        normalized_title = self.normalize_job_title(lead.get('job_title', ''))
+        email_domain = self.normalize_email_domain(lead.get('email', ''))
+        normalized_size = self.normalize_company_size(lead.get('company_size', 0))
+
+        senior_titles = [
+            'manager', 'head', 'director', 'vice president', 'vp',
+            'lead', 'principal', 'senior', 'supervisor', 'coordinator'
+        ]
+        executive_titles = [
+            'chief executive officer', 'ceo', 'chief technology officer', 'cto',
+            'chief financial officer', 'cfo', 'chief marketing officer', 'cmo',
+            'chief operating officer', 'coo', 'president', 'founder',
+            'executive vice president', 'evp', 'senior vice president', 'svp'
+        ]
+
+        if any(t in normalized_title for t in senior_titles):
+            points += 2
+            reasons.append("+2 senior title")
+        if any(t in normalized_title for t in executive_titles):
+            points += 1
+            reasons.append("+1 executive title")
+
+        if email_domain:
+            personal_domains = [
+                'gmail.com','yahoo.com','hotmail.com','outlook.com','aol.com',
+                'icloud.com','live.com','msn.com','mail.com','protonmail.com',
+                'yandex.com','qq.com','sina.com','zoho.com'
+            ]
+            if email_domain not in personal_domains:
+                points += 1
+                reasons.append(f"+1 corporate email ({email_domain})")
+
+        if normalized_size > 100:
+            points += 2
+            reasons.append("+2 company size > 100")
+        elif normalized_size > 25:
+            points += 1
+            reasons.append("+1 company size > 25")
+        elif normalized_size > 5:
+            reasons.append("±0 company size > 5")
+        else:
+            reasons.append("±0 very small company")
+
+        if points >= 5:
+            level = "High"
+        elif points >= 3:
+            level = "Medium"
+        elif points >= 1:
+            level = "Medium"
+        else:
+            level = "Low"
+
+        return level, points, reasons
+
+    def score_leads_batch_with_explain(self, leads_df):
+        """
+        Batch scoring with explanations.
+        Returns DataFrame with 'score', 'score_points', 'score_reasons' columns.
+        """
+        import pandas as pd
+        scored_df = leads_df.copy()
+        levels = []
+        points_list = []
+        reasons_list = []
+        for _, row in scored_df.iterrows():
+            level, pts, reasons = self.score_lead_with_explain(row.to_dict())
+            levels.append(level)
+            points_list.append(pts)
+            reasons_list.append('; '.join(reasons))
+        scored_df['score'] = levels
+        scored_df['score_points'] = points_list
+        scored_df['score_reasons'] = reasons_list
+        priority_order = {'High': 3, 'Medium': 2, 'Low': 1}
+        scored_df['_sort_priority'] = scored_df['score'].map(priority_order)
+        scored_df = scored_df.sort_values('_sort_priority', ascending=False)
+        scored_df = scored_df.drop('_sort_priority', axis=1)
+        return scored_df
     
     def _rule_based_score(self, lead: dict):
         """
