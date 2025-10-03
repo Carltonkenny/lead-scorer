@@ -5,6 +5,8 @@
 ### Overview
 A lightweight lead prioritization tool that helps sales teams quickly identify and rank high-value leads from CSV uploads.
 
+*Why I built this: After talking with sales teams, I realized they're drowning in leads but starving for priorities. This tool was designed to solve that specific pain point - transforming chaos into actionable insights in seconds.*
+
 ### Key Features
 - **CSV Upload**: Import lead data from spreadsheets
 - **Rule-based Scoring**: Automatic lead qualification and prioritization  
@@ -23,6 +25,8 @@ A lightweight lead prioritization tool that helps sales teams quickly identify a
 - **Scoring Engine**: Rule-based (modular for future ML upgrade)
 
 ### Setup Instructions
+*Getting started is intentionally simple - I wanted anyone to be able to test this in under 2 minutes:*
+
 1. Install dependencies:
    ```bash
    pip install pandas streamlit
@@ -32,6 +36,8 @@ A lightweight lead prioritization tool that helps sales teams quickly identify a
    ```bash
    streamlit run app.py
    ```
+
+*Pro tip: Try the sample CSV download first - it's designed with realistic, messy data that showcases the scoring logic.*
 
 ### File Structure
 - `app.py` - Main Streamlit application

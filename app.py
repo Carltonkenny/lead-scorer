@@ -4,8 +4,78 @@
 import streamlit as st
 import pandas as pd
 import io
+import re
 from scoring_engine import LeadScorer
 from outreach_templates import get_templates, get_openers, generate_personalized_content
+
+def validate_email_format(email):
+    """Validate basic email format."""
+    if pd.isna(email) or str(email).strip() == '':
+        return False
+    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(email_pattern, str(email).strip()))
+
+def validate_csv_data(df):
+    """Comprehensive CSV validation with detailed feedback."""
+    issues = []
+    warnings = []
+    
+    # Check required columns
+    required_columns = ['name', 'email', 'company', 'job_title', 'company_size']
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    
+    if missing_columns:
+        issues.append(f"❌ Missing required columns: {', '.join(missing_columns)}")
+        return issues, warnings, False
+    
+    # Check for empty rows
+    empty_rows = df[df.isnull().all(axis=1)]
+    if len(empty_rows) > 0:
+        warnings.append(f"⚠️ Found {len(empty_rows)} completely empty rows (will be removed)")
+    
+    # Validate email formats
+    invalid_emails = []
+    for idx, email in enumerate(df['email']):
+        if not validate_email_format(email):
+            invalid_emails.append(f"Row {idx+1}: '{email}'")
+    
+    if invalid_emails:
+        warnings.append(f"⚠️ Invalid email formats found in {len(invalid_emails)} rows")
+        if len(invalid_emails) <= 3:
+            warnings.append(f"Examples: {'; '.join(invalid_emails[:3])}")
+    
+    # Check for missing critical data
+    missing_names = df['name'].isnull().sum()
+    missing_companies = df['company'].isnull().sum()
+    missing_titles = df['job_title'].isnull().sum()
+    
+    if missing_names > 0:
+        warnings.append(f"⚠️ {missing_names} leads missing names (will use 'Unknown')")
+    if missing_companies > 0:
+        warnings.append(f"⚠️ {missing_companies} leads missing company names")
+    if missing_titles > 0:
+        warnings.append(f"⚠️ {missing_titles} leads missing job titles (will affect scoring)")
+    
+    # Check company size format
+    invalid_sizes = 0
+    for size in df['company_size']:
+        if pd.notna(size):
+            try:
+                int(size)
+            except (ValueError, TypeError):
+                invalid_sizes += 1
+    
+    if invalid_sizes > 0:
+        warnings.append(f"⚠️ {invalid_sizes} leads have invalid company sizes (will use 0)")
+    
+    # Data quality summary
+    total_leads = len(df)
+    clean_leads = total_leads - len(empty_rows)
+    
+    if clean_leads != total_leads:
+        warnings.append(f"📊 Processing {clean_leads} out of {total_leads} total rows")
+    
+    return issues, warnings, True
 
 def apply_score_styling(score):
     """Apply color styling based on lead score."""
@@ -37,7 +107,7 @@ def main():
     if 'scorer' not in st.session_state:
         st.session_state.scorer = LeadScorer()
     
-    # Sidebar with instructions
+    # Sidebar with instructions and tips
     st.sidebar.header("📋 Instructions")
     st.sidebar.markdown("""
     **Expected CSV Columns:**
@@ -52,6 +122,23 @@ def main():
     - 🟡 **Medium**: Some qualifying factors
     - 🔴 **Low**: Few/no qualifying factors
     """)
+    
+    # Helpful tips section
+    st.sidebar.markdown("---")
+    st.sidebar.header("💡 Pro Tips")
+    
+    tips = [
+        "🎯 **Sort by High priority first** for maximum efficiency",
+        "📋 **Use the sample CSV** to understand the format",
+        "⚙️ **Abbreviations work**: 'Sr. VP', 'Mgr', 'Dir' are recognized", 
+        "🏢 **Company sizes can be text**: 'Startup', 'Medium', '50+' all work",
+        "📧 **Corporate emails score higher** than Gmail/Yahoo",
+        "📤 **Export high-priority leads** for focused outreach"
+    ]
+    
+    # Show tips with some personality
+    for tip in tips:
+        st.sidebar.info(tip)
     
     # Sample CSV download
     sample_df = create_sample_csv()
@@ -80,18 +167,48 @@ def main():
         if uploaded_file is not None:
             # Load and process data
             try:
-                df = pd.read_csv(uploaded_file)
+                with st.spinner('📋 Loading and validating your CSV...'):
+                    df = pd.read_csv(uploaded_file)
+                    
+                    # Comprehensive validation
+                    issues, warnings, is_valid = validate_csv_data(df)
+                    
+                    # Display validation results
+                    if issues:
+                        st.error("😱 **Critical Issues Found:**")
+                        for issue in issues:
+                            st.error(issue)
+                        st.error("📝 **Please fix these issues and re-upload your CSV.**")
+                        st.stop()
+                    
+                    if warnings:
+                        st.warning("⚠️ **Data Quality Warnings:**")
+                        for warning in warnings:
+                            st.warning(warning)
+                        st.info("🚀 **Don't worry - we'll handle these automatically and proceed with scoring!**")
+                    
+                    # Clean the data
+                    df_clean = df.dropna(how='all')  # Remove completely empty rows
+                    df_clean['name'] = df_clean['name'].fillna('Unknown')
+                    df_clean['company'] = df_clean['company'].fillna('Unknown Company')
+                    df_clean['job_title'] = df_clean['job_title'].fillna('Unknown')
+                    
+                    # Clean company_size
+                    def clean_company_size(size):
+                        if pd.isna(size):
+                            return 0
+                        try:
+                            return int(size)
+                        except (ValueError, TypeError):
+                            return 0
+                    
+                    df_clean['company_size'] = df_clean['company_size'].apply(clean_company_size)
                 
-                # Validate required columns
-                required_columns = ['name', 'email', 'company', 'job_title', 'company_size']
-                missing_columns = [col for col in required_columns if col not in df.columns]
-                
-                if missing_columns:
-                    st.error(f"Missing required columns: {', '.join(missing_columns)}")
-                    st.stop()
-                
-                # Apply scoring
-                scored_df = st.session_state.scorer.score_leads_batch(df)
+                with st.spinner('🎯 Scoring your leads...'):
+                    # Apply scoring
+                    scored_df = st.session_state.scorer.score_leads_batch(df_clean)
+                    
+                st.success(f"✅ **Upload Complete!** Successfully processed {len(scored_df)} leads.")
                 
                 # Display stats
                 total_leads = len(scored_df)
@@ -104,8 +221,20 @@ def main():
                 st.metric("🟡 Medium Priority", medium_count)
                 st.metric("🔴 Low Priority", low_count)
                 
+            except pd.errors.EmptyDataError:
+                st.error("😵 **File is empty** - Please upload a CSV file with lead data.")
+                st.stop()
+            except pd.errors.ParserError as e:
+                st.error(f"😵 **CSV Format Error** - Unable to parse the file: {str(e)}")
+                st.info("📝 **Tip:** Make sure your file is a valid CSV with proper formatting.")
+                st.stop()
+            except UnicodeDecodeError:
+                st.error("😵 **Encoding Error** - Unable to read the file encoding.")
+                st.info("📝 **Tip:** Save your CSV as UTF-8 encoding and try again.")
+                st.stop()
             except Exception as e:
-                st.error(f"Error processing file: {str(e)}")
+                st.error(f"😵 **Unexpected Error:** {str(e)}")
+                st.error("📝 **Please check your CSV file and try again, or contact support.**")
                 st.stop()
     
     # Display scored leads
@@ -149,6 +278,7 @@ def main():
             # Outreach suggestions for top leads
             st.markdown("---")
             st.subheader("📬 Outreach Suggestions")
+            st.info("🎯 **Pro Tip:** Focus on high-priority leads first - they have the highest conversion potential!")
             
             # Get high priority leads for outreach
             high_priority_leads = scored_df[scored_df['score'] == 'High'].head(3)
@@ -216,7 +346,14 @@ def main():
                         )
                         
             else:
-                st.info("📊 No high-priority leads found. Upload leads or adjust scoring criteria to see outreach suggestions.")
+                st.info("📊 **No high-priority leads found.**")
+                st.markdown("""
+                **Tips to get high-priority leads:**
+                - Look for leads with senior job titles (Manager, Director, VP, CEO)
+                - Include leads from medium/large companies (25+ employees)
+                - Use corporate email addresses rather than personal ones
+                - Try the sample CSV to see how scoring works!
+                """)
                 
         # Export functionality
         st.markdown("---")
@@ -228,13 +365,16 @@ def main():
             # Export scored leads CSV
             csv_buffer = io.StringIO()
             scored_df.to_csv(csv_buffer, index=False)
-            st.download_button(
+            
+            if st.download_button(
                 label="📈 Download Scored Leads CSV",
                 data=csv_buffer.getvalue(),
                 file_name="scored_leads.csv",
                 mime="text/csv",
-                help="Download the complete dataset with scores"
-            )
+                help="Download the complete dataset with scores",
+                key="download_all"
+            ):
+                st.success("✅ **Complete dataset downloaded!** Ready for your sales team.")
         
         with col2:
             # Export high priority leads only
@@ -242,13 +382,15 @@ def main():
             if len(high_priority_df) > 0:
                 high_csv_buffer = io.StringIO()
                 high_priority_df.to_csv(high_csv_buffer, index=False)
-                st.download_button(
+                if st.download_button(
                     label="⭐ Download High Priority Only",
                     data=high_csv_buffer.getvalue(),
                     file_name="high_priority_leads.csv",
                     mime="text/csv",
-                    help="Download only high-priority leads"
-                )
+                    help="Download only high-priority leads",
+                    key="download_high"
+                ):
+                    st.success(f"✅ **{len(high_priority_df)} high-priority leads downloaded!** Focus on these first.")
             else:
                 st.info("No high priority leads to export")
         
@@ -267,13 +409,15 @@ def main():
             summary_df = pd.DataFrame(summary_data)
             summary_csv_buffer = io.StringIO()
             summary_df.to_csv(summary_csv_buffer, index=False)
-            st.download_button(
+            if st.download_button(
                 label="📉 Download Summary Report",
                 data=summary_csv_buffer.getvalue(),
                 file_name="lead_scoring_summary.csv",
                 mime="text/csv",
-                help="Download scoring summary metrics"
-            )
+                help="Download scoring summary metrics",
+                key="download_summary"
+            ):
+                st.success("✅ **Summary report downloaded!** Great for stakeholder updates.")
     
     else:
         # Show sample data when no file is uploaded

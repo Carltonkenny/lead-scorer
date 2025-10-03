@@ -9,6 +9,147 @@ class LeadScorer:
     
     def __init__(self):
         self.scoring_mode = "rule"
+        # Normalize common job title variations
+        self.job_title_mappings = {
+            'mgr': 'manager',
+            'sr': 'senior',
+            'sr.': 'senior', 
+            'jr': 'junior',
+            'jr.': 'junior',
+            'vp': 'vice president',
+            'v.p.': 'vice president',
+            'ceo': 'chief executive officer',
+            'cto': 'chief technology officer',
+            'cfo': 'chief financial officer',
+            'cmo': 'chief marketing officer',
+            'coo': 'chief operating officer',
+            'evp': 'executive vice president',
+            'svp': 'senior vice president',
+            'avp': 'assistant vice president',
+            'dir': 'director',
+            'dir.': 'director',
+            'asst': 'assistant',
+            'assoc': 'associate',
+            'coord': 'coordinator',
+            'rep': 'representative',
+            'dev': 'developer',
+            'eng': 'engineer',
+            'admin': 'administrator'
+        }
+    
+    def normalize_job_title(self, job_title):
+        """
+        Normalize job title variations for consistent scoring.
+        
+        Args:
+            job_title (str): Raw job title from CSV
+            
+        Returns:
+            str: Normalized job title
+        """
+        if not job_title or str(job_title).lower().strip() in ['nan', 'none', '']:
+            return 'unknown'
+            
+        title = str(job_title).lower().strip()
+        
+        # Remove common punctuation and extra spaces
+        title = title.replace(',', ' ').replace('.', ' ').replace('/', ' ')
+        title = ' '.join(title.split())  # Normalize whitespace
+        
+        # Apply mappings for common abbreviations
+        words = title.split()
+        normalized_words = []
+        for word in words:
+            # Check if word (without punctuation) is in our mappings
+            clean_word = word.strip('.,!?;:')
+            if clean_word in self.job_title_mappings:
+                normalized_words.append(self.job_title_mappings[clean_word])
+            else:
+                normalized_words.append(word)
+        
+        return ' '.join(normalized_words)
+    
+    def normalize_email_domain(self, email):
+        """
+        Extract and normalize email domain for corporate vs personal classification.
+        
+        Args:
+            email (str): Email address
+            
+        Returns:
+            str: Normalized domain or empty string if invalid
+        """
+        if not email or str(email).lower().strip() in ['nan', 'none', '']:
+            return ''
+            
+        email_str = str(email).lower().strip()
+        
+        if '@' not in email_str:
+            return ''
+            
+        try:
+            domain = email_str.split('@')[1]
+            # Remove common variations
+            domain = domain.replace('www.', '')
+            return domain
+        except (IndexError, AttributeError):
+            return ''
+    
+    def normalize_company_size(self, company_size):
+        """
+        Normalize company size to handle various input formats.
+        
+        Args:
+            company_size: Raw company size (could be int, str, float)
+            
+        Returns:
+            int: Normalized company size (0 if invalid)
+        """
+        if company_size is None or str(company_size).lower().strip() in ['nan', 'none', '', 'unknown']:
+            return 0
+            
+        # Handle string representations
+        size_str = str(company_size).lower().strip()
+        
+        # Handle common text representations
+        size_mappings = {
+            'startup': 5,
+            'small': 10,
+            'medium': 50,
+            'large': 200,
+            'enterprise': 1000,
+            'freelance': 1,
+            'freelancer': 1,
+            'individual': 1,
+            'solo': 1,
+            'self-employed': 1
+        }
+        
+        if size_str in size_mappings:
+            return size_mappings[size_str]
+            
+        # Handle ranges like "50-100", "10+", "100-500"
+        if '-' in size_str:
+            try:
+                # Take the lower bound of ranges
+                parts = size_str.split('-')
+                return int(parts[0].strip())
+            except (ValueError, IndexError):
+                return 0
+                
+        if '+' in size_str:
+            try:
+                return int(size_str.replace('+', '').strip())
+            except ValueError:
+                return 0
+        
+        # Handle numeric values
+        try:
+            # Remove common suffixes and convert
+            size_clean = size_str.replace(',', '').replace('employees', '').replace('people', '').strip()
+            return max(0, int(float(size_clean)))  # Convert via float to handle "50.0"
+        except (ValueError, TypeError):
+            return 0
     
     def score_lead(self, lead: dict, mode="rule"):
         """
@@ -31,47 +172,75 @@ class LeadScorer:
     
     def _rule_based_score(self, lead: dict):
         """
-        Rule-based scoring logic.
+        Enhanced rule-based scoring logic with normalization.
         
         Rules:
-        1. If job title contains "Manager", "Head", "Director" → High priority
-        2. If email domain is corporate (not Gmail/Yahoo) → +1 tier up
-        3. If company size > 50 → High, else Medium or Low
+        1. If job title contains senior roles (Manager, Director, VP, etc.) → +2 points
+        2. If email domain is corporate (not personal) → +1 point
+        3. If company size > 50 → +2 points, > 10 → +1 point
+        4. Bonus points for C-level titles → +1 point
         
         Returns:
             str: Score level - "High", "Medium", or "Low"
         """
         score = 0
         
-        # Rule 1: Job Title Check
-        job_title = str(lead.get('job_title', '')).lower()
-        senior_titles = ['manager', 'head', 'director', 'vp', 'vice president', 'chief', 'lead']
-        if any(title in job_title for title in senior_titles):
-            score += 2
+        # Rule 1: Job Title Check (with normalization)
+        normalized_title = self.normalize_job_title(lead.get('job_title', ''))
         
-        # Rule 2: Corporate Email Domain Check
-        email = str(lead.get('email', '')).lower()
-        personal_domains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com']
-        if email and '@' in email:
-            domain = email.split('@')[1]
-            if not any(personal_domain in domain for personal_domain in personal_domains):
+        # Senior titles (enhanced list)
+        senior_titles = [
+            'manager', 'head', 'director', 'vice president', 'vp', 
+            'lead', 'principal', 'senior', 'supervisor', 'coordinator'
+        ]
+        
+        # C-level and executive titles get extra points
+        executive_titles = [
+            'chief executive officer', 'ceo', 'chief technology officer', 'cto',
+            'chief financial officer', 'cfo', 'chief marketing officer', 'cmo',
+            'chief operating officer', 'coo', 'president', 'founder', 
+            'executive vice president', 'evp', 'senior vice president', 'svp'
+        ]
+        
+        # Check for senior titles
+        if any(title in normalized_title for title in senior_titles):
+            score += 2
+            
+        # Bonus for executive titles
+        if any(title in normalized_title for title in executive_titles):
+            score += 1
+        
+        # Rule 2: Corporate Email Domain Check (with normalization)
+        email_domain = self.normalize_email_domain(lead.get('email', ''))
+        
+        if email_domain:
+            # Expanded list of personal domains
+            personal_domains = [
+                'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com',
+                'icloud.com', 'live.com', 'msn.com', 'mail.com', 'protonmail.com',
+                'yandex.com', 'qq.com', 'sina.com', 'zoho.com'
+            ]
+            
+            if not any(personal_domain == email_domain for personal_domain in personal_domains):
                 score += 1  # Corporate email bonus
         
-        # Rule 3: Company Size Check
-        company_size = lead.get('company_size', 0)
-        try:
-            company_size = int(company_size)
-            if company_size > 50:
-                score += 2
-            elif company_size > 10:
-                score += 1
-        except (ValueError, TypeError):
-            pass  # Invalid company size, no bonus
+        # Rule 3: Company Size Check (with normalization)
+        normalized_size = self.normalize_company_size(lead.get('company_size', 0))
         
-        # Convert score to priority level
-        if score >= 4:
+        if normalized_size > 100:  # Large company
+            score += 2
+        elif normalized_size > 25:  # Medium company
+            score += 1
+        elif normalized_size > 5:   # Small but established company
+            score += 0  # Neutral
+        # Freelancers, students, etc. get no bonus (could be negative in future)
+        
+        # Convert score to priority level with refined thresholds
+        if score >= 5:  # High bar for high priority
             return "High"
-        elif score >= 2:
+        elif score >= 3:  # Medium priority
+            return "Medium"
+        elif score >= 1:  # Some positive signals
             return "Medium"
         else:
             return "Low"
